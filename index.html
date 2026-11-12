@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gerador de Exame Psíquico</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f3ee;--card:#fff;--ink:#1c2320;--mute:#6b736f;--line:#e0ded5;--ok:#1f5f5b;--okbg:#e2efec;--alt:#a8461f;--altbg:#f9e7dd}
+*{box-sizing:border-box}
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+header{position:sticky;top:0;z-index:5;background:rgba(244,243,238,.96);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 20px;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+h1{font-size:16px;margin:0 10px 0 0;font-weight:600;letter-spacing:-.01em}
+.lbl{font-size:12px;color:var(--mute);margin-right:4px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.seg button{border:0;background:none;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer;color:var(--mute)}
+.seg button.on{background:var(--ink);color:#fff}
+.btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--ok);color:#fff;border-color:var(--ok)}
+.btn.primary:hover{filter:brightness(1.1)}
+.spacer{flex:1}
+main{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:20px;padding:20px;max-width:1440px;margin:0 auto}
+#sections{display:flex;flex-direction:column;gap:12px}
+.sec{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px 14px}
+.sec.off .body{opacity:.35;pointer-events:none}
+.sechead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.sechead h2{font-size:14px;margin:0;font-weight:600;flex:1}
+.num{color:var(--mute);font-weight:500;margin-right:6px;font-variant-numeric:tabular-nums}
+.mini{font:inherit;font-size:12px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 8px;cursor:pointer;color:var(--mute)}
+.mini:hover{color:var(--ink);border-color:var(--ink)}
+.grp{display:flex;gap:10px;padding:4px 0;align-items:flex-start}
+.glabel{width:118px;flex:none;color:var(--mute);font-size:12px;padding-top:6px;line-height:1.25}
+.glabel small{display:block;font-size:10.5px;opacity:.75}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink);transition:background .1s,border-color .1s}
+.chip:hover{border-color:#9aa19d}
+.chip.on.n{background:var(--okbg);border-color:var(--ok);color:var(--ok);font-weight:500}
+.chip.on.a{background:var(--altbg);border-color:var(--alt);color:var(--alt);font-weight:500}
+.free{width:100%;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;font-size:13px;resize:vertical;min-height:34px;background:#fbfbf9}
+.free:focus{outline:none;border-color:var(--ok);background:#fff}
+aside{position:sticky;top:74px;align-self:start;display:flex;flex-direction:column;gap:10px}
+.outhead{display:flex;align-items:center;gap:8px}
+.outhead h2{font-size:14px;margin:0;flex:1}
+#count{font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
+#out{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-family:'IBM Plex Serif',Georgia,serif;font-size:15px;line-height:1.62;white-space:pre-wrap;max-height:calc(100vh - 170px);overflow:auto;min-height:200px}
+#out:empty::before{content:"Selecione as opções ao lado.";color:var(--mute)}
+.chk{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--mute);cursor:pointer}
+.legend{font-size:12px;color:var(--mute);display:flex;gap:12px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
+#toast.show{opacity:1;transform:translateX(-50%)}
+#fab{display:none}
+@media(max-width:960px){
+ main{grid-template-columns:1fr;padding:12px}
+ aside{position:static}
+ #out{max-height:none}
+ .grp{flex-direction:column;gap:4px}
+ .glabel{width:auto;padding-top:0}
+ #fab{display:block;position:fixed;right:16px;bottom:16px;z-index:10;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Exame psíquico</h1>
+  <span><span class="lbl">Paciente</span>
+    <span class="seg" id="gender"><button data-v="m" class="on">Masculino</button><button data-v="f">Feminino</button></span></span>
+  <span><span class="lbl">Formato</span>
+    <span class="seg" id="format"><button data-v="corrido" class="on">Texto corrido</button><button data-v="topicos">Por tópicos</button></span></span>
+  <label class="chk"><input type="checkbox" id="titulo"> Título “Exame do estado mental:”</label>
+  <span class="spacer"></span>
+  <button class="btn" id="allNormal">Tudo normal</button>
+  <button class="btn" id="clearAll">Limpar tudo</button>
+</header>
+
+<main>
+  <div id="sections"></div>
+  <aside>
+    <div class="outhead">
+      <h2>Texto gerado</h2>
+      <span id="count">0 caracteres</span>
+      <button class="btn primary" id="copy">Copiar</button>
+    </div>
+    <div id="out"></div>
+    <div class="legend"><span><span class="dot" style="background:var(--ok)"></span>sem alteração</span><span><span class="dot" style="background:var(--alt)"></span>alterado</span><span>Clique de novo para desmarcar.</span></div>
+  </aside>
+</main>
+<button class="btn primary" id="fab">Copiar texto</button>
+<div id="toast"></div>
+
+<script>
+/* Convenções nos fragmentos:  @ → o/a conforme o sexo;  {masc|fem} → forma por extenso. */
+const o = (l, f, n) => ({ l, f: f ?? l, n: !!n });
+const N = 1;
+
+const SECTIONS = [
+ { id:'apar', title:'Apresentação', lead:'Apresenta-se', groups:[
+   { id:'comp', label:'Comparecimento', type:'single', opts:[ o('Sozinh@','desacompanhad@',N), o('Acompanhad@','acompanhad@',N), o('Trazid@ por terceiros','trazid@ por terceiros') ]},
+   { id:'hig', label:'Higiene', type:'single', opts:[ o('Adequada','em bom estado de higiene e cuidados pessoais',N), o('Parcialmente descuidada','com cuidados pessoais parcialmente negligenciados'), o('Precária','com higiene e cuidados pessoais precários') ]},
+   { id:'vest', label:'Vestes', type:'single', opts:[ o('Adequadas','com vestes adequadas ao contexto',N), o('Desalinhadas','com vestes desalinhadas'), o('Extravagantes','com vestes e adornos extravagantes'), o('Inadequadas','com vestes inadequadas ao contexto') ]},
+   { id:'idade', label:'Idade aparente', type:'single', opts:[ o('Compatível','aparentando idade compatível com a cronológica',N), o('Mais velh@','aparentando idade superior à cronológica'), o('Mais jovem','aparentando idade inferior à cronológica') ]},
+   { id:'outros', label:'Outros achados', type:'multi', free:true, opts:[ o('Emagrecid@','emagrecid@'), o('Sobrepeso','com sobrepeso aparente'), o('Odor etílico','com odor etílico'), o('Lesões de autolesão','com lesões compatíveis com autolesão'), o('Sinais de uso de substâncias','com sinais sugestivos de uso recente de substâncias'), o('Fácies de sofrimento','com fácies de sofrimento') ]},
+ ]},
+ { id:'atit', title:'Atitude', lead:'Mostra-se', groups:[
+   { id:'att', label:'Atitude', type:'multi', wrap:'%s durante a entrevista', opts:[ o('Colaborativ@','colaborativ@',N), o('Cordial','cordial',N), o('Pouco colaborativ@','pouco colaborativ@'), o('Desconfiad@','desconfiad@'), o('Reticente','reticente'), o('Evasiv@','evasiv@'), o('Inibid@','inibid@'), o('Irritad@','irritad@'), o('Hostil','hostil'), o('Querelante','querelante'), o('Indiferente','indiferente'), o('Perplex@','perplex@'), o('Pueril','pueril'), o('Teatral','teatral'), o('{Sedutor|Sedutora}','{sedutor|sedutora}'), o('{Manipulador|Manipuladora}','{manipulador|manipuladora}'), o('Expansiv@','expansiv@') ]},
+   { id:'olhar', label:'Contato visual', type:'single', opts:[ o('Adequado','com contato visual adequado',N), o('Pobre','com contato visual pobre'), o('Evitativo','com contato visual evitativo'), o('Fixo','com olhar fixo') ]},
+   { id:'rapp', label:'Rapport', type:'single', opts:[ o('Bom','estabelecendo bom rapport',N), o('Difícil','com dificuldade no estabelecimento de rapport') ]},
+ ]},
+ { id:'cons', title:'Consciência e orientação', sep:', ', groups:[
+   { id:'nivel', label:'Nível de consciência', type:'single', opts:[ o('Vígil','vígil',N), o('Hipervígil','hipervígil'), o('Sonolent@','sonolent@'), o('Obnubilad@','obnubilad@'), o('Torporos@','torporos@') ]},
+   { id:'ori', label:'Orientação', type:'multi', opts:[ o('Orientad@ auto e alopsiquicamente','orientad@ auto e alopsiquicamente',N), o('Parcialmente desorientad@ no tempo','parcialmente desorientad@ no tempo'), o('Desorientad@ no tempo','desorientad@ no tempo'), o('Desorientad@ no espaço','desorientad@ no espaço'), o('Desorientad@ quanto a si','desorientad@ quanto à própria identidade') ]},
+ ]},
+ { id:'aten', title:'Atenção', lead:'Atenção', groups:[
+   { id:'vig', label:'Vigilância', type:'single', opts:[ o('Normovigil','normovigil',N), o('Hipervigil','hipervigil'), o('Hipovigil','hipovigil') ]},
+   { id:'ten', label:'Tenacidade', type:'single', opts:[ o('Normotenaz','normotenaz',N), o('Hipotenaz','hipotenaz'), o('Hipertenaz','hipertenaz') ]},
+   { id:'ex', label:'Achados', type:'multi', free:true, wrap:'com %s', opts:[ o('Distraibilidade','distraibilidade aumentada'), o('Falha em tarefas seriadas','dificuldade em tarefas de atenção sustentada') ]},
+ ]},
+ { id:'mem', title:'Memória', custom:'memoria', groups:[
+   { id:'imed', label:'Imediata', type:'single', opts:[ o('Preservada','preservada',N), o('Parcialmente prejudicada','parcialmente prejudicada'), o('Prejudicada','prejudicada') ]},
+   { id:'rec', label:'Recente', type:'single', opts:[ o('Preservada','preservada',N), o('Parcialmente prejudicada','parcialmente prejudicada'), o('Prejudicada','prejudicada') ]},
+   { id:'rem', label:'Remota', type:'single', opts:[ o('Preservada','preservada',N), o('Parcialmente prejudicada','parcialmente prejudicada'), o('Prejudicada','prejudicada') ]},
+   { id:'ex', label:'Achados', type:'multi', free:true, opts:[ o('Queixa subjetiva sem correlato','queixas subjetivas de memória sem correlato objetivo ao exame'), o('Confabulações','confabulações'), o('Lacunas amnésticas','lacunas amnésticas') ]},
+ ]},
+ { id:'intel', title:'Inteligência', lead:'Inteligência clinicamente estimada', groups:[
+   { id:'est', label:'Estimativa clínica', type:'single', opts:[ o('Na média','na média',N), o('Acima da média','acima da média'), o('Abaixo da média','abaixo da média') ]},
+ ]},
+ { id:'senso', title:'Sensopercepção', lead:'Sensopercepção', groups:[
+   { id:'sp', label:'Alterações', type:'multi', wrapA:'com %s', opts:[ o('Sem alterações','sem alterações',N), o('Alucinações auditivas','alucinações auditivas'), o('Auditivas de comando','alucinações auditivas de comando'), o('Vozes comentadoras','vozes que comentam suas ações'), o('Visuais','alucinações visuais'), o('Táteis','alucinações táteis'), o('Olfativas','alucinações olfativas'), o('Gustativas','alucinações gustativas'), o('Cenestésicas','alucinações cenestésicas'), o('Pseudoalucinações','pseudoalucinações'), o('Ilusões','ilusões'), o('Atitude alucinatória','atitude alucinatória durante a entrevista') ]},
+ ]},
+ { id:'pens', title:'Pensamento', lead:'Pensamento', sep:', ', groups:[
+   { id:'curso', label:'Curso', type:'single', opts:[ o('Normal','de curso normal',N), o('Acelerado','de curso acelerado'), o('Lentificado','de curso lentificado'), o('Bloqueios','com bloqueios') ]},
+   { id:'forma', label:'Forma', type:'multi', opts:[ o('Lógico e coerente','lógico e coerente',N), o('Prolixo','prolixo'), o('Circunstancial','circunstancial'), o('Tangencial','tangencial'), o('Fuga de ideias','com fuga de ideias'), o('Afrouxamento','com afrouxamento dos nexos associativos'), o('Desagregado','desagregado'), o('Perseverante','perseverante'), o('Concreto','concreto'), o('Empobrecido','empobrecido') ]},
+   { id:'cont', label:'Conteúdo', type:'multi', wrapA:'com %s', opts:[ o('Sem alterações','sem alterações de conteúdo',N), o('Menos-valia','ideias de menos-valia'), o('Culpa','ideias de culpa'), o('Ruína','ideias de ruína'), o('Desesperança','desesperança'), o('Preocupações ansiosas','preocupações excessivas e ruminações ansiosas'), o('Obsessões','ideias obsessivas'), o('Hipocondríacas','preocupações hipocondríacas'), o('Conflitos laborais','conteúdo centrado em conflitos laborais'), o('Ideias de referência','ideias de referência'), o('Ideias sobrevaloradas','ideias sobrevaloradas'), o('Delírio persecutório','delírio persecutório'), o('Delírio de referência','delírio de referência'), o('Delírio de grandeza','delírio de grandeza'), o('Delírio de ciúme','delírio de ciúme'), o('Delírio místico','delírio místico-religioso'), o('Delírio somático','delírio somático'), o('Influência/controle','vivências de influência'), o('Irradiação/inserção','vivências de irradiação ou inserção do pensamento') ]},
+ ]},
+ { id:'ling', title:'Linguagem', lead:'Fala', groups:[
+   { id:'fala', label:'Fala', type:'multi', opts:[ o('Sem alterações','espontânea, fluente, em volume e velocidade adequados',N), o('Logorreica','logorreica'), o('Pressão de fala','com pressão de fala'), o('Lentificada','lentificada'), o('Volume baixo','em volume baixo'), o('Monossilábica','monossilábica'), o('Latência aumentada','com latência de resposta aumentada'), o('Pobreza de conteúdo','com pobreza de conteúdo'), o('Disártrica','disártrica'), o('Disfluência','com disfluência'), o('Neologismos','com neologismos'), o('Ecolalia','com ecolalia'), o('Mutismo','ausente (mutismo)') ]},
+ ]},
+ { id:'humor', title:'Humor', lead:'Humor', sep:', ', groups:[
+   { id:'h', label:'Humor', type:'multi', opts:[ o('Eutímico','eutímico',N), o('Deprimido','deprimido'), o('Ansioso','ansioso'), o('Irritável','irritável'), o('Disfórico','disfórico'), o('Eufórico','eufórico'), o('Expansivo','expansivo'), o('Apático','apático') ]},
+   { id:'ex', label:'Achados', type:'multi', free:true, wrap:'com %s', opts:[ o('Anedonia','anedonia'), o('Angústia','angústia'), o('Tensão','tensão') ]},
+ ]},
+ { id:'afeto', title:'Afeto', lead:'Afeto', sep:', ', groups:[
+   { id:'mod', label:'Modulação', type:'single', opts:[ o('Modulado','modulado',N), o('Hipomodulado','hipomodulado'), o('Restrito','restrito'), o('Embotado','embotado'), o('Aplanado','aplanado'), o('Lábil','lábil'), o('Hipermodulado','hipermodulado') ]},
+   { id:'cong', label:'Congruência', type:'single', opts:[ o('Congruente','congruente com o humor',N), o('Incongruente','incongruente com o conteúdo do discurso') ]},
+   { id:'res', label:'Ressonância', type:'single', opts:[ o('Boa','com boa ressonância afetiva',N), o('Diminuída','com ressonância afetiva diminuída') ]},
+   { id:'ex', label:'Achados', type:'multi', free:true, wrap:'com %s', opts:[ o('Choro na entrevista','choro durante a entrevista'), o('Risos imotivados','risos imotivados') ]},
+ ]},
+ { id:'psmot', title:'Psicomotricidade', lead:'Psicomotricidade', groups:[
+   { id:'pm', label:'Psicomotricidade', type:'multi', opts:[ o('Sem alterações','sem alterações',N), o('Lentificada','lentificada'), o('Agitação','com agitação psicomotora'), o('Inquietação','com inquietação motora'), o('Hipomimia','com hipomimia'), o('Tremores','com tremor de extremidades'), o('Acatisia','com sinais de acatisia'), o('Tiques','com tiques'), o('Maneirismos','com maneirismos'), o('Estereotipias','com estereotipias'), o('Catatonia','com sinais catatônicos') ]},
+ ]},
+ { id:'vol', title:'Volição, pragmatismo e impulsos', groups:[
+   { id:'v', label:'Volição', type:'single', opts:[ o('Preservada','volição preservada',N), o('Hipobulia','hipobulia'), o('Abulia','abulia'), o('Hiperbulia','hiperbulia') ]},
+   { id:'p', label:'Pragmatismo', type:'single', opts:[ o('Preservado','pragmatismo preservado',N), o('Parcialmente comprometido','pragmatismo parcialmente comprometido'), o('Comprometido','pragmatismo comprometido') ]},
+   { id:'i', label:'Impulsos', type:'single', opts:[ o('Controle preservado','controle de impulsos preservado',N), o('Impulsividade aumentada','impulsividade aumentada') ]},
+ ]},
+ { id:'risco', title:'Risco', custom:'risco', groups:[
+   { id:'suic', label:'Ideação suicida', type:'single', opts:[ o('Nega','',N), o('Passiva (desejo de morte)','ideação suicida passiva, sem planejamento'), o('Ativa sem plano','ideação suicida ativa, sem plano estruturado'), o('Com plano','ideação suicida ativa com plano estruturado'), o('Com plano e intenção','ideação suicida com plano e intenção') ]},
+   { id:'het', label:'Heteroagressividade', type:'single', opts:[ o('Nega','',N), o('Ideação presente','ideação heteroagressiva'), o('Com alvo definido','ideação heteroagressiva com alvo definido') ]},
+   { id:'ex', label:'Histórico / proteção', type:'multi', free:true, opts:[ o('Nega tentativas prévias','nega tentativas de suicídio prévias',N), o('Tentativa prévia','relata tentativa de suicídio prévia'), o('Autolesão não suicida','relata comportamento autolesivo não suicida'), o('Fatores de proteção','refere fatores de proteção',N) ]},
+ ]},
+ { id:'juizo', title:'Juízo e crítica', groups:[
+   { id:'jr', label:'Juízo de realidade', type:'single', opts:[ o('Preservado','juízo de realidade preservado',N), o('Comprometido','juízo de realidade comprometido') ]},
+   { id:'cr', label:'Crítica de morbidade', type:'single', opts:[ o('Preservada','crítica de morbidade preservada',N), o('Parcial','crítica de morbidade parcial'), o('Ausente','crítica de morbidade ausente') ]},
+   { id:'tr', label:'Tratamento', type:'single', opts:[ o('Deseja','desejo de tratamento presente',N), o('Ambivalente','ambivalência quanto ao tratamento'), o('Recusa','recusa ao tratamento') ]},
+ ]},
+ { id:'obs', title:'Outras observações', short:'Observações', groups:[] },
+];
+
+/* ---------- estado ---------- */
+const state = { fem:false, format:'corrido', titulo:false, sel:{}, free:{}, off:{} };
+SECTIONS.forEach(s => { state.sel[s.id] = {}; s.groups.forEach(g => state.sel[s.id][g.id] = new Set()); state.free[s.id] = ''; state.off[s.id] = false; });
+
+try { const p = JSON.parse(localStorage.getItem('exPsiqPrefs') || '{}'); if (p.format) state.format = p.format; if (typeof p.titulo === 'boolean') state.titulo = p.titulo; } catch (e) {}
+function savePrefs(){ try { localStorage.setItem('exPsiqPrefs', JSON.stringify({format:state.format, titulo:state.titulo})); } catch (e) {} }
+
+/* ---------- texto ---------- */
+const G = s => s.replace(/\{([^|}]*)\|([^}]*)\}/g, (m, a, b) => state.fem ? b : a).replace(/@/g, state.fem ? 'a' : 'o');
+const listJoin = a => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1];
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+function sentence(s){ s = (s || '').trim(); if (!s) return ''; s = cap(s); if (!/[.!?…:]$/.test(s)) s += '.'; return s; }
+const chosen = (sec, g) => [...state.sel[sec.id][g.id]].sort((a, b) => a - b).map(i => g.opts[i]);
+
+function groupText(sec, g){
+  const sel = chosen(sec, g); if (!sel.length) return '';
+  const joined = listJoin(sel.map(x => x.f).filter(Boolean)); if (!joined) return '';
+  const abn = sel.some(x => !x.n);
+  const w = (abn && g.wrapA) ? g.wrapA : g.wrap;
+  return w ? w.replace('%s', joined) : joined;
+}
+
+const CUSTOM = {
+  memoria(sec, get){
+    const names = { imed:'imediata', rec:'recente', rem:'remota' }, by = new Map();
+    ['imed','rec','rem'].forEach(k => { const s = get(k); if (!s.length) return; const f = s[0].f; if (!by.has(f)) by.set(f, []); by.get(f).push(names[k]); });
+    const plural = f => f.split(' ').map((w, i, a) => i === a.length - 1 ? w + 's' : w).join(' ');
+    let t = [...by].map(([f, ns]) => ns.length > 1 ? 'memórias ' + listJoin(ns) + ' ' + plural(f) : 'memória ' + ns[0] + ' ' + f).join(', ');
+    const ex = get('ex').map(x => x.f);
+    if (ex.length) t = t ? t + ', com ' + listJoin(ex) : 'presença de ' + listJoin(ex);
+    return sentence(t);
+  },
+  risco(sec, get){
+    const s = get('suic'), h = get('het'), neg = [], pos = [], out = [];
+    if (s.length) (s[0].n ? neg.push('suicida') : pos.push(s[0].f));
+    if (h.length) (h[0].n ? neg.push('heteroagressiva') : pos.push(h[0].f));
+    if (neg.length) out.push('nega ideação ' + listJoin(neg));
+    if (pos.length) out.push('refere ' + listJoin(pos));
+    get('ex').forEach(x => out.push(x.f));
+    return out.map(sentence).join(' ');
+  }
+};
+
+function sectionText(sec){
+  if (state.off[sec.id]) return '';
+  let main = '';
+  if (sec.custom) {
+    main = CUSTOM[sec.custom](sec, gid => chosen(sec, sec.groups.find(g => g.id === gid)));
+  } else if (sec.groups.length) {
+    const parts = sec.groups.map(g => groupText(sec, g)).filter(Boolean);
+    if (parts.length) main = sentence((sec.lead ? sec.lead + ' ' : '') + (sec.sep ? parts.join(sec.sep) : listJoin(parts)));
+  }
+  main = G(main);
+  const free = state.free[sec.id].trim().split(/\n+/).map(sentence).filter(Boolean).join(' ');
+  return [main, free].filter(Boolean).join(' ');
+}
+
+function render(){
+  const items = SECTIONS.map(s => [s, sectionText(s)]).filter(([, t]) => t);
+  let txt;
+  if (state.format === 'corrido') {
+    txt = items.map(([, t]) => t).join(' ');
+    if (state.titulo && txt) txt = 'Exame do estado mental: ' + txt;
+  } else {
+    txt = items.map(([s, t]) => (s.short || s.title) + ': ' + t).join('\n');
+    if (state.titulo && txt) txt = 'Exame do estado mental:\n' + txt;
+  }
+  document.getElementById('out').textContent = txt;
+  document.getElementById('count').textContent = txt.length.toLocaleString('pt-BR') + ' caracteres';
+}
+
+/* ---------- interface ---------- */
+const chipEls = {};
+function paintGroup(sec, g){
+  chipEls[sec.id][g.id].forEach((el, i) => {
+    el.classList.toggle('on', state.sel[sec.id][g.id].has(i));
+    el.textContent = G(g.opts[i].l);
+  });
+}
+function paintAll(){ SECTIONS.forEach(s => s.groups.forEach(g => paintGroup(s, g))); render(); }
+
+function setNormal(sec){
+  sec.groups.forEach(g => {
+    const set = state.sel[sec.id][g.id]; set.clear();
+    if (g.type === 'single') { const i = g.opts.findIndex(x => x.n); if (i >= 0) set.add(i); }
+    else if (!g.free) g.opts.forEach((x, i) => { if (x.n) set.add(i); });
+    else if (sec.id === 'risco') g.opts.forEach((x, i) => { if (x.n && i === 0) set.add(i); });
+  });
+}
+function clearSec(sec){ sec.groups.forEach(g => state.sel[sec.id][g.id].clear()); }
+
+function click(sec, g, i){
+  const set = state.sel[sec.id][g.id], opt = g.opts[i];
+  if (set.has(i)) set.delete(i);
+  else if (g.type === 'single') { set.clear(); set.add(i); }
+  else {
+    if (!g.free) [...set].forEach(j => { if (g.opts[j].n !== opt.n) set.delete(j); });
+    set.add(i);
+  }
+  paintGroup(sec, g); render();
+}
+
+function build(){
+  const root = document.getElementById('sections');
+  SECTIONS.forEach((sec, si) => {
+    chipEls[sec.id] = {};
+    const card = document.createElement('section'); card.className = 'sec'; card.id = 'sec-' + sec.id;
+    const head = document.createElement('div'); head.className = 'sechead';
+    head.innerHTML = `<h2><span class="num">${si + 1}</span>${sec.title}</h2>`;
+    if (sec.groups.length) {
+      const bN = document.createElement('button'); bN.className = 'mini'; bN.textContent = 'Normal';
+      bN.onclick = () => { setNormal(sec); state.off[sec.id] = false; card.classList.remove('off'); bO.textContent = 'Omitir'; sec.groups.forEach(g => paintGroup(sec, g)); render(); };
+      const bC = document.createElement('button'); bC.className = 'mini'; bC.textContent = 'Limpar';
+      bC.onclick = () => { clearSec(sec); sec.groups.forEach(g => paintGroup(sec, g)); render(); };
+      var bO = document.createElement('button'); bO.className = 'mini'; bO.textContent = 'Omitir';
+      bO.onclick = () => { state.off[sec.id] = !state.off[sec.id]; card.classList.toggle('off', state.off[sec.id]); bO.textContent = state.off[sec.id] ? 'Incluir' : 'Omitir'; render(); };
+      head.append(bN, bC, bO);
+    }
+    card.appendChild(head);
+    const body = document.createElement('div'); body.className = 'body';
+    sec.groups.forEach(g => {
+      const row = document.createElement('div'); row.className = 'grp';
+      row.innerHTML = `<div class="glabel">${g.label}${g.type === 'multi' ? '<small>várias opções</small>' : ''}</div>`;
+      const chips = document.createElement('div'); chips.className = 'chips';
+      chipEls[sec.id][g.id] = g.opts.map((opt, i) => {
+        const b = document.createElement('button'); b.className = 'chip ' + (opt.n ? 'n' : 'a');
+        b.onclick = () => click(sec, g, i); chips.appendChild(b); return b;
+      });
+      row.appendChild(chips); body.appendChild(row);
+    });
+    const ta = document.createElement('textarea'); ta.className = 'free'; ta.rows = 1;
+    ta.placeholder = sec.groups.length ? 'Complemento livre (entra ao final desta seção)…' : 'Texto livre…';
+    ta.oninput = () => { state.free[sec.id] = ta.value; render(); };
+    body.appendChild(ta);
+    card.appendChild(body); root.appendChild(card);
+  });
+}
+
+function segment(id, key, cb){
+  const el = document.getElementById(id);
+  el.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.v === (key === 'fem' ? (state.fem ? 'f' : 'm') : state[key]));
+    b.onclick = () => { el.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); cb(b.dataset.v); };
+  });
+}
+
+function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1600); }
+async function copy(){
+  const txt = document.getElementById('out').textContent; if (!txt) return toast('Nada para copiar');
+  try { await navigator.clipboard.writeText(txt); toast('Texto copiado'); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (_) {}
+    ta.remove();
+    if (ok) toast('Texto copiado');
+    else { const r = document.createRange(); r.selectNodeContents(document.getElementById('out')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Texto selecionado — use Ctrl/Cmd+C'); }
+  }
+}
+
+build();
+segment('gender', 'fem', v => { state.fem = v === 'f'; paintAll(); });
+segment('format', 'format', v => { state.format = v; savePrefs(); render(); });
+const tit = document.getElementById('titulo'); tit.checked = state.titulo;
+tit.onchange = () => { state.titulo = tit.checked; savePrefs(); render(); };
+document.getElementById('allNormal').onclick = () => { SECTIONS.forEach(s => { setNormal(s); }); paintAll(); };
+document.getElementById('clearAll').onclick = () => {
+  SECTIONS.forEach(s => { clearSec(s); state.free[s.id] = ''; state.off[s.id] = false; });
+  document.querySelectorAll('.free').forEach(t => t.value = '');
+  document.querySelectorAll('.sec').forEach(c => c.classList.remove('off'));
+  document.querySelectorAll('.sechead .mini:last-child').forEach(b => { if (b.textContent === 'Incluir') b.textContent = 'Omitir'; });
+  paintAll();
+};
+document.getElementById('copy').onclick = copy;
+document.getElementById('fab').onclick = copy;
+
+SECTIONS.forEach(s => setNormal(s));
+paintAll();
+</script>
+</body>
+</html>
