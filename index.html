@@ -64,11 +64,9 @@ aside{position:sticky;top:74px;align-self:start;display:flex;flex-direction:colu
 <body>
 <header>
   <h1>Exame psíquico</h1>
-  <span><span class="lbl">Paciente</span>
-    <span class="seg" id="gender"><button data-v="m" class="on">Masculino</button><button data-v="f">Feminino</button></span></span>
   <span><span class="lbl">Formato</span>
     <span class="seg" id="format"><button data-v="corrido" class="on">Texto corrido</button><button data-v="topicos">Por tópicos</button></span></span>
-  <label class="chk"><input type="checkbox" id="titulo"> Título “Exame do estado mental:”</label>
+  <label class="chk"><input type="checkbox" id="titulo"> Títulos (“Exame do estado mental:”, “Exame físico:”…)</label>
   <span class="spacer"></span>
   <button class="btn" id="allNormal">Tudo normal</button>
   <button class="btn" id="clearAll">Limpar tudo</button>
@@ -90,6 +88,16 @@ aside{position:sticky;top:74px;align-self:start;display:flex;flex-direction:colu
 <div id="toast"></div>
 
 <script>
+/* ==== EXPSI-CORE BEGIN ====
+   Núcleo do Gerador de Exame Psíquico — compartilhado entre o "Gerador de Exame Psíquico.html"
+   (fonte da verdade) e o hub_clinico.html (aba Estruturado). NÃO edite a cópia do Hub:
+   edite o Gerador e rode `python3 sincronizar_examepsi.py` (copia este bloco entre os marcadores).
+   API: EXPSI.novoEstado(), EXPSI.montar(root, st, onChange, opts), EXPSI.textoPsiquico(st, fmt),
+        EXPSI.textoFisico(st), EXPSI.textoCompl(st, soNovos), EXPSI.textoModalidade(st),
+        EXPSI.tudoNormal(st), EXPSI.limparTudo(st), EXPSI.repintar().
+   Estado 100% serializável (arrays, não Sets) — pode ir para localStorage/JSON. */
+const EXPSI = (function(){
+'use strict';
 /* Convenções nos fragmentos:  @ → o/a conforme o sexo;  {masc|fem} → forma por extenso. */
 const o = (l, f, n) => ({ l, f: f ?? l, n: !!n });
 const N = 1;
@@ -167,22 +175,50 @@ const SECTIONS = [
  { id:'obs', title:'Outras observações', short:'Observações', groups:[] },
 ];
 
-/* ---------- estado ---------- */
-const state = { fem:false, format:'corrido', titulo:false, sel:{}, free:{}, off:{} };
-SECTIONS.forEach(s => { state.sel[s.id] = {}; s.groups.forEach(g => state.sel[s.id][g.id] = new Set()); state.free[s.id] = ''; state.off[s.id] = false; });
+/* Exame físico — mesma mecânica de chips; sinais vitais/antropometria em campos numéricos. */
+const FISICO = { id:'fis', title:'Exame físico', groups:[
+  { id:'eg', label:'Estado geral', type:'single', opts:[ o('BEG','bom estado geral',N), o('REG','regular estado geral'), o('MEG','mau estado geral') ]},
+  { id:'ach', label:'Ectoscopia', type:'multi', opts:[ o('Corad@','corad@',N), o('Hidratad@','hidratad@',N), o('Anictéric@','anictéric@',N), o('Acianótic@','acianótic@',N), o('Afebril','afebril',N), o('Eupneic@','eupneic@',N),
+      o('Hipocorad@','hipocorad@'), o('Desidratad@','desidratad@'), o('Ictéric@','ictéric@'), o('Febril','febril'), o('Dispneic@','dispneic@'), o('Sudoreic@','sudoreic@'), o('Tremor fino','com tremor fino de extremidades') ]},
+]};
+const VITAIS = [
+  { id:'pa', label:'PA', un:'mmHg', ph:'120/80', txt:v=>'PA '+v+' mmHg' },
+  { id:'fc', label:'FC', un:'bpm', ph:'72', txt:v=>'FC '+v+' bpm' },
+  { id:'peso', label:'Peso', un:'kg', ph:'70', txt:v=>'peso '+v+' kg' },
+  { id:'altura', label:'Altura', un:'m', ph:'1,70', txt:v=>'altura '+v+' m' },
+  { id:'ca', label:'Circ. abdominal', un:'cm', ph:'90', txt:v=>'circunferência abdominal '+v+' cm' },
+];
 
-try { const p = JSON.parse(localStorage.getItem('exPsiqPrefs') || '{}'); if (p.format) state.format = p.format; if (typeof p.titulo === 'boolean') state.titulo = p.titulo; } catch (e) {}
-function savePrefs(){ try { localStorage.setItem('exPsiqPrefs', JSON.stringify({format:state.format, titulo:state.titulo})); } catch (e) {} }
-
-/* ---------- texto ---------- */
-const G = s => s.replace(/\{([^|}]*)\|([^}]*)\}/g, (m, a, b) => state.fem ? b : a).replace(/@/g, state.fem ? 'a' : 'o');
+/* ---------- utilidades de texto ---------- */
 const listJoin = a => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1];
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 function sentence(s){ s = (s || '').trim(); if (!s) return ''; s = cap(s); if (!/[.!?…:]$/.test(s)) s += '.'; return s; }
-const chosen = (sec, g) => [...state.sel[sec.id][g.id]].sort((a, b) => a - b).map(i => g.opts[i]);
+const num = s => { const x = parseFloat(String(s || '').replace(',', '.')); return isFinite(x) ? x : null; };
 
-function groupText(sec, g){
-  const sel = chosen(sec, g); if (!sel.length) return '';
+function novoEstado(){
+  const st = { fem:false, modal:'presencial', sel:{}, free:{}, off:{}, fis:{ sel:{}, v:{}, free:'', off:false }, compl:[] };
+  SECTIONS.forEach(s => { st.sel[s.id] = {}; s.groups.forEach(g => st.sel[s.id][g.id] = []); st.free[s.id] = ''; st.off[s.id] = false; });
+  FISICO.groups.forEach(g => st.fis.sel[g.id] = []);
+  return st;
+}
+/* Completa um estado antigo/parcial (vindo do JSON) com as chaves que faltarem. */
+function normalizar(st){
+  const base = novoEstado(); st = st || {};
+  const out = Object.assign(base, st);
+  out.sel = Object.assign({}, base.sel); out.free = Object.assign({}, base.free, st.free || {}); out.off = Object.assign({}, base.off, st.off || {});
+  SECTIONS.forEach(s => { out.sel[s.id] = {}; s.groups.forEach(g => { const a = st.sel && st.sel[s.id] && st.sel[s.id][g.id]; out.sel[s.id][g.id] = Array.isArray(a) ? a.slice() : []; }); });
+  const f = st.fis || {}; out.fis = { sel:{}, v:Object.assign({}, f.v || {}), free:f.free || '', off:!!f.off };
+  FISICO.groups.forEach(g => { const a = f.sel && f.sel[g.id]; out.fis.sel[g.id] = Array.isArray(a) ? a.slice() : []; });
+  out.compl = Array.isArray(st.compl) ? st.compl.map(r => Object.assign({ data:'', exame:'', resultado:'', prev:false, imp:true }, r)) : [];
+  return out;
+}
+
+function G(st, s){ return s.replace(/\{([^|}]*)\|([^}]*)\}/g, (m, a, b) => st.fem ? b : a).replace(/@/g, st.fem ? 'a' : 'o'); }
+const chosenIn = (selArr, g) => selArr.slice().sort((a, b) => a - b).map(i => g.opts[i]).filter(Boolean);
+const chosen = (st, sec, g) => chosenIn(st.sel[sec.id][g.id], g);
+
+function groupText(sel, g){
+  if (!sel.length) return '';
   const joined = listJoin(sel.map(x => x.f).filter(Boolean)); if (!joined) return '';
   const abn = sel.some(x => !x.n);
   const w = (abn && g.wrapA) ? g.wrapA : g.wrap;
@@ -210,107 +246,290 @@ const CUSTOM = {
   }
 };
 
-function sectionText(sec){
-  if (state.off[sec.id]) return '';
+function freeText(t){ return String(t || '').trim().split(/\n+/).map(sentence).filter(Boolean).join(' '); }
+
+function sectionText(st, sec){
+  if (st.off[sec.id]) return '';
   let main = '';
   if (sec.custom) {
-    main = CUSTOM[sec.custom](sec, gid => chosen(sec, sec.groups.find(g => g.id === gid)));
+    main = CUSTOM[sec.custom](sec, gid => chosen(st, sec, sec.groups.find(g => g.id === gid)));
   } else if (sec.groups.length) {
-    const parts = sec.groups.map(g => groupText(sec, g)).filter(Boolean);
+    const parts = sec.groups.map(g => groupText(chosen(st, sec, g), g)).filter(Boolean);
     if (parts.length) main = sentence((sec.lead ? sec.lead + ' ' : '') + (sec.sep ? parts.join(sec.sep) : listJoin(parts)));
   }
-  main = G(main);
-  const free = state.free[sec.id].trim().split(/\n+/).map(sentence).filter(Boolean).join(' ');
-  return [main, free].filter(Boolean).join(' ');
+  main = G(st, main);
+  return [main, freeText(st.free[sec.id])].filter(Boolean).join(' ');
 }
+
+function textoModalidade(st){ return st.modal === 'tele' ? 'Avaliação realizada por teleconsulta.' : ''; }
+
+/* fmt: 'corrido' | 'topicos' */
+function textoPsiquico(st, fmt){
+  const items = SECTIONS.map(s => [s, sectionText(st, s)]).filter(([, t]) => t);
+  if (fmt === 'topicos') return items.map(([s, t]) => (s.short || s.title) + ': ' + t).join('\n');
+  return items.map(([, t]) => t).join(' ');
+}
+
+function imc(st){
+  const p = num(st.fis.v.peso); let a = num(st.fis.v.altura);
+  if (!p || !a) return null; if (a > 3) a = a / 100;  // aceita cm
+  return p / (a * a);
+}
+function textoFisico(st){
+  if (st.fis.off) return '';
+  const tele = st.modal === 'tele';
+  const parts = [];
+  if (!tele) {
+    const ch = FISICO.groups.map(g => groupText(chosenIn(st.fis.sel[g.id], g), g)).filter(Boolean);
+    if (ch.length) parts.push(sentence(G(st, ch.join(', '))));
+  }
+  const vs = VITAIS.filter(x => String(st.fis.v[x.id] || '').trim()).map(x => x.txt(String(st.fis.v[x.id]).trim()));
+  const i = imc(st);
+  if (vs.length) {
+    let t = listJoin(vs.map((s, k) => s));
+    if (i) t += ' (IMC ' + i.toFixed(1).replace('.', ',') + ' kg/m²)';
+    parts.push(sentence((tele ? 'Dados referidos: ' : '') + t));
+  }
+  const f = freeText(st.fis.free); if (f) parts.push(f);
+  if (tele && !parts.length) return '';
+  return parts.join(' ');
+}
+/* soNovos: só linhas da consulta atual (sem 'prev'); respeita o "incluir" (imp) de cada linha. */
+function textoCompl(st, soNovos){
+  const rows = st.compl.filter(r => (r.exame || r.resultado) && r.imp !== false && !(soNovos && r.prev));
+  if (!rows.length) return '';
+  return sentence(rows.map(r => (r.exame || 'exame').trim() + (r.resultado ? ': ' + r.resultado.trim() : '') + (r.data ? ' (' + r.data.trim() + ')' : '')).join('; '));
+}
+
+/* ---------- ações sobre o estado ---------- */
+function setNormalSec(st, sec){
+  sec.groups.forEach(g => {
+    const set = [];
+    if (g.type === 'single') { const i = g.opts.findIndex(x => x.n); if (i >= 0) set.push(i); }
+    else if (!g.free) g.opts.forEach((x, i) => { if (x.n) set.push(i); });
+    else if (sec.id === 'risco') g.opts.forEach((x, i) => { if (x.n && i === 0) set.push(i); });
+    st.sel[sec.id][g.id] = set;
+  });
+}
+function setNormalFis(st){
+  FISICO.groups.forEach(g => {
+    const set = [];
+    if (g.type === 'single') { const i = g.opts.findIndex(x => x.n); if (i >= 0) set.push(i); }
+    else g.opts.forEach((x, i) => { if (x.n) set.push(i); });
+    st.fis.sel[g.id] = set;
+  });
+}
+/* Só o exame PSÍQUICO: o físico tem botão próprio — não registrar exame físico não realizado. */
+function tudoNormal(st){ SECTIONS.forEach(s => { setNormalSec(st, s); st.off[s.id] = false; }); }
+function limparTudo(st){ const n = novoEstado(); n.fem = st.fem; n.modal = st.modal; Object.keys(st).forEach(k => delete st[k]); Object.assign(st, n); }
+
+function clickIn(arr, g, i){
+  const k = arr.indexOf(i), opt = g.opts[i];
+  if (k >= 0) { arr.splice(k, 1); return; }
+  if (g.type === 'single') { arr.length = 0; arr.push(i); return; }
+  if (!g.free) for (let j = arr.length - 1; j >= 0; j--) if (g.opts[arr[j]].n !== opt.n) arr.splice(j, 1);
+  arr.push(i);
+}
+
+/* ---------- interface (CSS isolado com prefixo xp-) ---------- */
+const CSS = `
+.xp{--xp-ink:#1c2320;--xp-mute:#6b736f;--xp-line:#e0ded5;--xp-ok:#1f5f5b;--xp-okbg:#e2efec;--xp-alt:#a8461f;--xp-altbg:#f9e7dd;display:flex;flex-direction:column;gap:10px;font-size:13px;color:var(--xp-ink)}
+.xp-bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.xp-seg{display:inline-flex;border:1px solid var(--xp-line);border-radius:7px;overflow:hidden;background:#fff}
+.xp-seg button{border:0;background:none;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer;color:var(--xp-mute)}
+.xp-seg button.on{background:var(--xp-ink);color:#fff}
+.xp-lbl{font-size:11px;color:var(--xp-mute);margin-right:3px}
+.xp-sec{background:#fff;border:1px solid var(--xp-line);border-radius:10px;padding:8px 12px 10px}
+.xp-sec.off .xp-body{opacity:.35;pointer-events:none}
+.xp-head{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.xp-head h4{font-size:13px;margin:0;font-weight:600;flex:1}
+.xp-num{color:var(--xp-mute);font-weight:500;margin-right:5px}
+.xp-mini{font:inherit;font-size:11px;border:1px solid var(--xp-line);background:#fff;border-radius:5px;padding:2px 7px;cursor:pointer;color:var(--xp-mute)}
+.xp-mini:hover{color:var(--xp-ink);border-color:var(--xp-ink)}
+.xp-grp{display:flex;gap:8px;padding:3px 0;align-items:flex-start}
+.xp-gl{width:112px;flex:none;color:var(--xp-mute);font-size:11.5px;padding-top:4px;line-height:1.25}
+.xp-gl small{display:block;font-size:10px;opacity:.75}
+.xp-chips{display:flex;flex-wrap:wrap;gap:4px}
+.xp-chip{border:1px solid var(--xp-line);background:#fff;border-radius:999px;padding:3px 10px;font:inherit;font-size:12.5px;cursor:pointer;color:var(--xp-ink)}
+.xp-chip:hover{border-color:#9aa19d}
+.xp-chip.on.n{background:var(--xp-okbg);border-color:var(--xp-ok);color:var(--xp-ok);font-weight:500}
+.xp-chip.on.a{background:var(--xp-altbg);border-color:var(--xp-alt);color:var(--xp-alt);font-weight:500}
+.xp-free{width:100%;margin-top:6px;border:1px solid var(--xp-line);border-radius:7px;padding:5px 8px;font:inherit;font-size:12.5px;resize:vertical;min-height:30px;background:#fbfbf9}
+.xp-free:focus{outline:none;border-color:var(--xp-ok);background:#fff}
+.xp-vit{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:4px}
+.xp-vit label{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--xp-mute)}
+.xp-vit input{width:72px;border:1px solid var(--xp-line);border-radius:6px;padding:3px 6px;font:inherit;font-size:12.5px}
+.xp-imc{font-size:12px;color:var(--xp-ok);font-weight:500;align-self:center}
+.xp-crow{display:grid;grid-template-columns:22px 92px 1fr 1.4fr 22px;gap:5px;align-items:center;margin-top:4px}
+.xp-crow input[type=text]{border:1px solid var(--xp-line);border-radius:6px;padding:3px 6px;font:inherit;font-size:12.5px;width:100%}
+.xp-crow.prev input[type=text]{background:#f6f5f0;color:var(--xp-mute)}
+.xp-tag{font-size:10px;color:var(--xp-mute)}
+.xp-collapsed .xp-body{display:none}
+.xp-sum{display:none;font-size:12px;color:var(--xp-mute);line-height:1.45;margin-top:2px}
+.xp-collapsed .xp-sum{display:block}
+.xp-cpt .xp-head h4{cursor:pointer}
+.xp-cpt .xp-head h4::before{content:'▾ ';color:var(--xp-mute)}
+.xp-cpt .xp-collapsed .xp-head h4::before{content:'▸ '}
+.xp-sum.alt{color:var(--xp-alt)}
+@media(max-width:760px){.xp-grp{flex-direction:column;gap:3px}.xp-gl{width:auto;padding-top:0}.xp-crow{grid-template-columns:22px 1fr 22px}.xp-crow input.xp-cd,.xp-crow input.xp-cr{grid-column:2}}
+`;
+function injectCss(){ if (document.getElementById('xp-css')) return; const s = document.createElement('style'); s.id = 'xp-css'; s.textContent = CSS; document.head.appendChild(s); }
+
+const _ui = { root:null, st:null, cb:null, opts:{}, paint:[] };
+function el(tag, cls, html){ const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+function escH(s){ return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function segUI(label, vals, get, set){
+  const w = el('span'); w.appendChild(el('span', 'xp-lbl', label));
+  const sg = el('span', 'xp-seg');
+  vals.forEach(([v, t]) => { const b = el('button', null, t); b.type = 'button';
+    b.onclick = () => { set(v); [...sg.children].forEach(x => x.classList.toggle('on', x === b)); changed(true); };
+    sg.appendChild(b); _ui.paint.push(() => b.classList.toggle('on', get() === v)); });
+  w.appendChild(sg); return w;
+}
+function changed(repaint){ if (repaint) repintar(); if (_ui.cb) _ui.cb(); }
+
+function chipGroup(body, g, getArr, colapsar){
+  const row = el('div', 'xp-grp');
+  row.appendChild(el('div', 'xp-gl', g.label + (g.type === 'multi' ? '<small>várias opções</small>' : '')));
+  const chips = el('div', 'xp-chips');
+  const bs = g.opts.map((opt, i) => { const b = el('button', 'xp-chip ' + (opt.n ? 'n' : 'a')); b.type = 'button';
+    b.onclick = () => { clickIn(getArr(), g, i); changed(true); }; chips.appendChild(b); return b; });
+  function paintG(){ const arr = getArr(); bs.forEach((b, i) => { b.classList.toggle('on', arr.indexOf(i) >= 0); b.textContent = G(_ui.st, g.opts[i].l); }); }
+  _ui.paint.push(paintG);
+  row.appendChild(chips); body.appendChild(row);
+}
+
+/* resumo(): texto mostrado quando a seção está recolhida (modo compacto). */
+function secCard(numero, titulo, resumo){
+  const card = el('section', 'xp-sec'); const head = el('div', 'xp-head');
+  head.innerHTML = '<h4><span class="xp-num">' + numero + '</span>' + titulo + '</h4>';
+  card.appendChild(head);
+  if (_ui.opts.compacto) {
+    card.classList.add('xp-collapsed');
+    head.querySelector('h4').onclick = () => card.classList.toggle('xp-collapsed');
+    const sum = el('div', 'xp-sum'); card.appendChild(sum);
+    if (resumo) _ui.paint.push(() => { const t = resumo(); sum.textContent = t.txt || '— sem marcação —'; sum.classList.toggle('alt', !!t.alt); });
+  }
+  const body = el('div', 'xp-body'); card.appendChild(body);
+  return { card, head, body };
+}
+function _algumAlterado(selMap, groups){ return groups.some(g => (selMap[g.id] || []).some(i => g.opts[i] && !g.opts[i].n)); }
+
+/* opts: { psiquico:true, fisico:true, compl:true, cabecalho:true (sexo/modalidade), compacto:false } */
+function montar(root, st, onChange, opts){
+  injectCss();
+  opts = Object.assign({ psiquico:true, fisico:true, compl:true, cabecalho:true }, opts || {});
+  _ui.root = root; _ui.st = st; _ui.cb = onChange; _ui.opts = opts; _ui.paint = [];
+  root.innerHTML = ''; root.classList.add('xp'); root.classList.toggle('xp-cpt', !!opts.compacto);
+  if (opts.cabecalho) {
+    const bar = el('div', 'xp-bar');
+    bar.appendChild(segUI('Paciente', [['m','Masculino'],['f','Feminino']], () => st.fem ? 'f' : 'm', v => { st.fem = v === 'f'; }));
+    bar.appendChild(segUI('Atendimento', [['presencial','Presencial'],['tele','Teleconsulta']], () => st.modal, v => { st.modal = v; }));
+    root.appendChild(bar);
+  }
+  let n = 0;
+  if (opts.psiquico) {
+    const bar2 = el('div', 'xp-bar');
+    const bN = el('button', 'xp-mini', 'Exame psíquico: tudo normal'); bN.type = 'button'; bN.onclick = () => { SECTIONS.forEach(s => { setNormalSec(st, s); st.off[s.id] = false; }); changed(true); };
+    const bC = el('button', 'xp-mini', 'Limpar exame psíquico'); bC.type = 'button'; bC.onclick = () => { SECTIONS.forEach(s => { s.groups.forEach(g => st.sel[s.id][g.id] = []); st.free[s.id] = ''; st.off[s.id] = false; }); changed(true); };
+    bar2.append(bN, bC); root.appendChild(bar2);
+    SECTIONS.forEach(sec => {
+      const { card, head, body } = secCard(++n, sec.title, () => ({ txt: st.off[sec.id] ? '(omitida)' : sectionText(st, sec), alt: _algumAlterado(st.sel[sec.id], sec.groups) }));
+      if (sec.groups.length) {
+        const bNo = el('button', 'xp-mini', 'Normal'); bNo.type = 'button'; bNo.onclick = () => { setNormalSec(st, sec); st.off[sec.id] = false; changed(true); };
+        const bLi = el('button', 'xp-mini', 'Limpar'); bLi.type = 'button'; bLi.onclick = () => { sec.groups.forEach(g => st.sel[sec.id][g.id] = []); changed(true); };
+        const bOm = el('button', 'xp-mini'); bOm.type = 'button'; bOm.onclick = () => { st.off[sec.id] = !st.off[sec.id]; changed(true); };
+        _ui.paint.push(() => { bOm.textContent = st.off[sec.id] ? 'Incluir' : 'Omitir'; card.classList.toggle('off', !!st.off[sec.id]); });
+        head.append(bNo, bLi, bOm);
+      }
+      sec.groups.forEach(g => chipGroup(body, g, () => st.sel[sec.id][g.id]));
+      const ta = el('textarea', 'xp-free'); ta.rows = 1;
+      ta.placeholder = sec.groups.length ? 'Complemento livre (entra ao final desta seção)…' : 'Texto livre…';
+      ta.oninput = () => { st.free[sec.id] = ta.value; changed(false); };
+      _ui.paint.push(() => { if (ta.value !== (st.free[sec.id] || '')) ta.value = st.free[sec.id] || ''; });
+      body.appendChild(ta); root.appendChild(card);
+    });
+  }
+  if (opts.fisico) {
+    const { card, head, body } = secCard(++n, FISICO.title, () => ({ txt: textoFisico(st) }));
+    const bNo = el('button', 'xp-mini', 'Normal'); bNo.type = 'button'; bNo.onclick = () => { setNormalFis(st); st.fis.off = false; changed(true); };
+    const bLi = el('button', 'xp-mini', 'Limpar'); bLi.type = 'button'; bLi.onclick = () => { FISICO.groups.forEach(g => st.fis.sel[g.id] = []); st.fis.v = {}; st.fis.free = ''; changed(true); };
+    const bOm = el('button', 'xp-mini'); bOm.type = 'button'; bOm.onclick = () => { st.fis.off = !st.fis.off; changed(true); };
+    head.append(bNo, bLi, bOm);
+    const chipsWrap = el('div');
+    FISICO.groups.forEach(g => chipGroup(chipsWrap, g, () => st.fis.sel[g.id]));
+    body.appendChild(chipsWrap);
+    const teleNote = el('div', 'xp-tag', 'Teleconsulta: ectoscopia não entra no texto; medidas saem como “dados referidos”.');
+    body.appendChild(teleNote);
+    const vit = el('div', 'xp-vit');
+    const ins = VITAIS.map(x => { const l = el('label', null, escH(x.label)); const i = el('input'); i.type = 'text'; i.placeholder = x.ph; i.inputMode = 'decimal';
+      i.oninput = () => { st.fis.v[x.id] = i.value; paintImc(); changed(false); }; l.appendChild(i); l.appendChild(document.createTextNode(x.un)); vit.appendChild(l); return [x, i]; });
+    const imcEl = el('span', 'xp-imc'); vit.appendChild(imcEl); body.appendChild(vit);
+    function paintImc(){ const i = imc(st); imcEl.textContent = i ? 'IMC ' + i.toFixed(1).replace('.', ',') : ''; }
+    const ta = el('textarea', 'xp-free'); ta.rows = 1; ta.placeholder = 'Outros achados do exame físico/neurológico…';
+    ta.oninput = () => { st.fis.free = ta.value; changed(false); }; body.appendChild(ta);
+    _ui.paint.push(() => { ins.forEach(([x, i]) => { const v = st.fis.v[x.id] || ''; if (i.value !== v) i.value = v; }); paintImc();
+      if (ta.value !== (st.fis.free || '')) ta.value = st.fis.free || '';
+      const tele = st.modal === 'tele'; chipsWrap.style.opacity = tele ? '.4' : ''; teleNote.style.display = tele ? '' : 'none';
+      bOm.textContent = st.fis.off ? 'Incluir' : 'Omitir'; card.classList.toggle('off', !!st.fis.off); });
+    root.appendChild(card);
+  }
+  if (opts.compl) {
+    const { card, head, body } = secCard(++n, 'Exames complementares', () => ({ txt: textoCompl(st, false) }));
+    const bAdd = el('button', 'xp-mini', '+ exame'); bAdd.type = 'button';
+    bAdd.onclick = () => { st.compl.push({ data:'', exame:'', resultado:'', prev:false, imp:true }); changed(true); };
+    head.appendChild(bAdd);
+    const list = el('div'); body.appendChild(list);
+    body.appendChild(el('div', 'xp-tag', '☑ = entra no texto. Linhas cinza vieram de registros anteriores.'));
+    _ui.paint.push(() => {
+      list.innerHTML = '';
+      st.compl.forEach((r, i) => {
+        const row = el('div', 'xp-crow' + (r.prev ? ' prev' : ''));
+        const ck = el('input'); ck.type = 'checkbox'; ck.checked = r.imp !== false; ck.title = 'Incluir no texto'; ck.onchange = () => { r.imp = ck.checked; changed(false); };
+        const d = el('input', 'xp-cd'); d.type = 'text'; d.placeholder = 'data'; d.value = r.data || ''; d.oninput = () => { r.data = d.value; changed(false); };
+        const e = el('input'); e.type = 'text'; e.placeholder = 'exame (ex.: TSH)'; e.value = r.exame || ''; e.oninput = () => { r.exame = e.value; changed(false); };
+        const rs = el('input', 'xp-cr'); rs.type = 'text'; rs.placeholder = 'resultado'; rs.value = r.resultado || ''; rs.oninput = () => { r.resultado = rs.value; changed(false); };
+        const x = el('button', 'xp-mini', '×'); x.type = 'button'; x.title = 'Remover'; x.onclick = () => { st.compl.splice(i, 1); changed(true); };
+        row.append(ck, d, e, rs, x); list.appendChild(row);
+      });
+      if (!st.compl.length) list.appendChild(el('div', 'xp-tag', 'Nenhum exame registrado.'));
+    });
+    root.appendChild(card);
+  }
+  repintar();
+}
+function repintar(){ _ui.paint.forEach(f => f()); }
+
+return { SECTIONS, FISICO, VITAIS, novoEstado, normalizar, montar, repintar, tudoNormal, limparTudo,
+         textoPsiquico, textoFisico, textoCompl, textoModalidade, sectionText, imc,
+         util:{ listJoin, cap, sentence, freeText } };
+})();
+/* ==== EXPSI-CORE END ==== */
+
+
+/* ---------- página avulsa ---------- */
+const st = EXPSI.novoEstado();
+const prefs = { format:'corrido', titulo:false };
+try { const p = JSON.parse(localStorage.getItem('exPsiqPrefs') || '{}'); if (p.format) prefs.format = p.format; if (typeof p.titulo === 'boolean') prefs.titulo = p.titulo; } catch (e) {}
+function savePrefs(){ try { localStorage.setItem('exPsiqPrefs', JSON.stringify(prefs)); } catch (e) {} }
 
 function render(){
-  const items = SECTIONS.map(s => [s, sectionText(s)]).filter(([, t]) => t);
-  let txt;
-  if (state.format === 'corrido') {
-    txt = items.map(([, t]) => t).join(' ');
-    if (state.titulo && txt) txt = 'Exame do estado mental: ' + txt;
+  const psi = [EXPSI.textoModalidade(st), EXPSI.textoPsiquico(st, prefs.format)].filter(Boolean).join(prefs.format === 'topicos' ? '\n' : ' ');
+  const fis = EXPSI.textoFisico(st), comp = EXPSI.textoCompl(st, false);
+  const blocos = [];
+  if (prefs.titulo) {
+    if (psi) blocos.push('Exame do estado mental:' + (prefs.format === 'topicos' ? '\n' : ' ') + psi);
+    if (fis) blocos.push('Exame físico: ' + fis);
+    if (comp) blocos.push('Exames complementares: ' + comp);
   } else {
-    txt = items.map(([s, t]) => (s.short || s.title) + ': ' + t).join('\n');
-    if (state.titulo && txt) txt = 'Exame do estado mental:\n' + txt;
+    if (psi) blocos.push(psi);
+    if (fis) blocos.push((prefs.format === 'topicos' ? 'Exame físico: ' : '') + fis);
+    if (comp) blocos.push((prefs.format === 'topicos' ? 'Exames complementares: ' : '') + comp);
   }
+  const txt = prefs.format === 'topicos' ? blocos.join('\n') : (prefs.titulo ? blocos.join('\n\n') : blocos.join(' '));
   document.getElementById('out').textContent = txt;
   document.getElementById('count').textContent = txt.length.toLocaleString('pt-BR') + ' caracteres';
-}
-
-/* ---------- interface ---------- */
-const chipEls = {};
-function paintGroup(sec, g){
-  chipEls[sec.id][g.id].forEach((el, i) => {
-    el.classList.toggle('on', state.sel[sec.id][g.id].has(i));
-    el.textContent = G(g.opts[i].l);
-  });
-}
-function paintAll(){ SECTIONS.forEach(s => s.groups.forEach(g => paintGroup(s, g))); render(); }
-
-function setNormal(sec){
-  sec.groups.forEach(g => {
-    const set = state.sel[sec.id][g.id]; set.clear();
-    if (g.type === 'single') { const i = g.opts.findIndex(x => x.n); if (i >= 0) set.add(i); }
-    else if (!g.free) g.opts.forEach((x, i) => { if (x.n) set.add(i); });
-    else if (sec.id === 'risco') g.opts.forEach((x, i) => { if (x.n && i === 0) set.add(i); });
-  });
-}
-function clearSec(sec){ sec.groups.forEach(g => state.sel[sec.id][g.id].clear()); }
-
-function click(sec, g, i){
-  const set = state.sel[sec.id][g.id], opt = g.opts[i];
-  if (set.has(i)) set.delete(i);
-  else if (g.type === 'single') { set.clear(); set.add(i); }
-  else {
-    if (!g.free) [...set].forEach(j => { if (g.opts[j].n !== opt.n) set.delete(j); });
-    set.add(i);
-  }
-  paintGroup(sec, g); render();
-}
-
-function build(){
-  const root = document.getElementById('sections');
-  SECTIONS.forEach((sec, si) => {
-    chipEls[sec.id] = {};
-    const card = document.createElement('section'); card.className = 'sec'; card.id = 'sec-' + sec.id;
-    const head = document.createElement('div'); head.className = 'sechead';
-    head.innerHTML = `<h2><span class="num">${si + 1}</span>${sec.title}</h2>`;
-    if (sec.groups.length) {
-      const bN = document.createElement('button'); bN.className = 'mini'; bN.textContent = 'Normal';
-      bN.onclick = () => { setNormal(sec); state.off[sec.id] = false; card.classList.remove('off'); bO.textContent = 'Omitir'; sec.groups.forEach(g => paintGroup(sec, g)); render(); };
-      const bC = document.createElement('button'); bC.className = 'mini'; bC.textContent = 'Limpar';
-      bC.onclick = () => { clearSec(sec); sec.groups.forEach(g => paintGroup(sec, g)); render(); };
-      var bO = document.createElement('button'); bO.className = 'mini'; bO.textContent = 'Omitir';
-      bO.onclick = () => { state.off[sec.id] = !state.off[sec.id]; card.classList.toggle('off', state.off[sec.id]); bO.textContent = state.off[sec.id] ? 'Incluir' : 'Omitir'; render(); };
-      head.append(bN, bC, bO);
-    }
-    card.appendChild(head);
-    const body = document.createElement('div'); body.className = 'body';
-    sec.groups.forEach(g => {
-      const row = document.createElement('div'); row.className = 'grp';
-      row.innerHTML = `<div class="glabel">${g.label}${g.type === 'multi' ? '<small>várias opções</small>' : ''}</div>`;
-      const chips = document.createElement('div'); chips.className = 'chips';
-      chipEls[sec.id][g.id] = g.opts.map((opt, i) => {
-        const b = document.createElement('button'); b.className = 'chip ' + (opt.n ? 'n' : 'a');
-        b.onclick = () => click(sec, g, i); chips.appendChild(b); return b;
-      });
-      row.appendChild(chips); body.appendChild(row);
-    });
-    const ta = document.createElement('textarea'); ta.className = 'free'; ta.rows = 1;
-    ta.placeholder = sec.groups.length ? 'Complemento livre (entra ao final desta seção)…' : 'Texto livre…';
-    ta.oninput = () => { state.free[sec.id] = ta.value; render(); };
-    body.appendChild(ta);
-    card.appendChild(body); root.appendChild(card);
-  });
-}
-
-function segment(id, key, cb){
-  const el = document.getElementById(id);
-  el.querySelectorAll('button').forEach(b => {
-    b.classList.toggle('on', b.dataset.v === (key === 'fem' ? (state.fem ? 'f' : 'm') : state[key]));
-    b.onclick = () => { el.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); cb(b.dataset.v); };
-  });
 }
 
 function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1600); }
@@ -327,24 +546,21 @@ async function copy(){
   }
 }
 
-build();
-segment('gender', 'fem', v => { state.fem = v === 'f'; paintAll(); });
-segment('format', 'format', v => { state.format = v; savePrefs(); render(); });
-const tit = document.getElementById('titulo'); tit.checked = state.titulo;
-tit.onchange = () => { state.titulo = tit.checked; savePrefs(); render(); };
-document.getElementById('allNormal').onclick = () => { SECTIONS.forEach(s => { setNormal(s); }); paintAll(); };
-document.getElementById('clearAll').onclick = () => {
-  SECTIONS.forEach(s => { clearSec(s); state.free[s.id] = ''; state.off[s.id] = false; });
-  document.querySelectorAll('.free').forEach(t => t.value = '');
-  document.querySelectorAll('.sec').forEach(c => c.classList.remove('off'));
-  document.querySelectorAll('.sechead .mini:last-child').forEach(b => { if (b.textContent === 'Incluir') b.textContent = 'Omitir'; });
-  paintAll();
-};
+const fmtEl = document.getElementById('format');
+fmtEl.querySelectorAll('button').forEach(b => {
+  b.classList.toggle('on', b.dataset.v === prefs.format);
+  b.onclick = () => { fmtEl.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); prefs.format = b.dataset.v; savePrefs(); render(); };
+});
+const tit = document.getElementById('titulo'); tit.checked = prefs.titulo;
+tit.onchange = () => { prefs.titulo = tit.checked; savePrefs(); render(); };
+document.getElementById('allNormal').onclick = () => { EXPSI.tudoNormal(st); EXPSI.repintar(); render(); };
+document.getElementById('clearAll').onclick = () => { EXPSI.limparTudo(st); st.compl = []; EXPSI.repintar(); render(); };
 document.getElementById('copy').onclick = copy;
 document.getElementById('fab').onclick = copy;
 
-SECTIONS.forEach(s => setNormal(s));
-paintAll();
+EXPSI.tudoNormal(st);
+EXPSI.montar(document.getElementById('sections'), st, render, { psiquico:true, fisico:true, compl:true, cabecalho:true });
+render();
 </script>
 </body>
 </html>
